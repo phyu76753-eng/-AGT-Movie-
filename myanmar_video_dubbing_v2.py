@@ -349,10 +349,10 @@ If there are multiple speakers, preserve the meaning of the conversation natural
 """
 
             # 503 UNAVAILABLE is usually temporary. Try the main model several
-            # times, then use a stable fallback model if needed.
+            # times. This account only supports the current Gemini 3.8 model.
             def generate_translation_with_retry(prompt, audio_file):
                 last_error = None
-                for model_name in ("gemini-3.8-flash", "gemini-2.5-flash"):
+                for model_name in ("gemini-3.8-flash",):
                     for attempt in range(4):
                         try:
                             status_box.info(
@@ -380,7 +380,7 @@ If there are multiple speakers, preserve the meaning of the conversation natural
                                 time.sleep(wait)
                             else:
                                 status_box.warning(
-                                    f"{model_name} မရသေးပါ။ အခြား model ဖြင့် ပြန်စမ်းနေပါသည်..."
+                                    f"{model_name} မရသေးပါ။ နောက်ဆုံး retry ပြီးပါပြီ..."
                                 )
                 raise last_error
 
@@ -713,4 +713,4 @@ If there are multiple speakers, preserve the meaning of the conversation natural
                 st.code(
                     error_text,
                     language="text"
-                )
+                    )
