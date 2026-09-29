@@ -4,6 +4,8 @@ import edge_tts
 import os
 import tempfile
 import datetime
+import time
+import random
 
 from moviepy.editor import VideoFileClip, AudioFileClip
 from google import genai
@@ -302,16 +304,32 @@ if uploaded_video:
 
 
             # New Google GenAI Client
-            client = genai.Client(
-                api_key=api_key
-            )
+            client = genai.Client(api_key=api_key)
 
+            # Upload audio to Gemini.  Retry because temporary 5xx/503 errors
+            # can happen while the uploaded file is being processed.
+            def upload_audio_with_retry(path, attempts=4):
+                last_error = None
+                for attempt in range(attempts):
+                    try:
+                        return client.files.upload(file=path)
+                    except Exception as e:
+                        last_error = e
+                        error_text = str(e).upper()
+                        transient = any(code in error_text for code in (
+                            "503", "UNAVAILABLE", "500", "502", "504",
+                            "429", "RESOURCE_EXHAUSTED"
+                        ))
+                        if not transient or attempt == attempts - 1:
+                            raise
+                        wait = min(2 ** attempt + random.random(), 30)
+                        status_box.warning(
+                            f"Gemini server ခဏမရသေးပါ။ {wait:.1f} စက္ကန့်အကြာ ပြန်စမ်းနေပါသည်..."
+                        )
+                        time.sleep(wait)
+                raise last_error
 
-            # Upload audio to Gemini
-            audio_file = client.files.upload(
-                file=extracted_audio_path
-            )
-
+            audio_file = upload_audio_with_retry(extracted_audio_path)
 
             prompt = """
 You are a professional Myanmar video dubbing translator.
@@ -330,14 +348,43 @@ Listen carefully to the audio.
 If there are multiple speakers, preserve the meaning of the conversation naturally.
 """
 
+            # 503 UNAVAILABLE is usually temporary. Try the main model several
+            # times, then use a stable fallback model if needed.
+            def generate_translation_with_retry(prompt, audio_file):
+                last_error = None
+                for model_name in ("gemini-3.8-flash", "gemini-2.5-flash"):
+                    for attempt in range(4):
+                        try:
+                            status_box.info(
+                                f"Gemini {model_name} ဖြင့် ပြန်ဆိုနေပါသည်..."
+                            )
+                            return client.models.generate_content(
+                                model=model_name,
+                                contents=[prompt, audio_file]
+                            )
+                        except Exception as e:
+                            last_error = e
+                            error_text = str(e).upper()
+                            transient = any(code in error_text for code in (
+                                "503", "UNAVAILABLE", "500", "502", "504",
+                                "429", "RESOURCE_EXHAUSTED"
+                            ))
+                            if not transient:
+                                raise
+                            if attempt < 3:
+                                wait = min(2 ** attempt + random.random(), 30)
+                                status_box.warning(
+                                    f"{model_name} ခဏမရသေးပါ။ "
+                                    f"{wait:.1f} စက္ကန့်အကြာ ပြန်စမ်းနေပါသည်..."
+                                )
+                                time.sleep(wait)
+                            else:
+                                status_box.warning(
+                                    f"{model_name} မရသေးပါ။ အခြား model ဖြင့် ပြန်စမ်းနေပါသည်..."
+                                )
+                raise last_error
 
-            response = client.models.generate_content(
-                model="gemini-3.8-flash",
-                contents=[
-                    prompt,
-                    audio_file
-                ]
-            )
+            response = generate_translation_with_retry(prompt, audio_file)
 
 
             myanmar_script = response.text.strip()
