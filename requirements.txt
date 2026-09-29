@@ -1,6 +1,6 @@
 streamlit
 moviepy==1.0.3
-gTTS
 edge-tts
+google-generativeai
 Pillow
 numpy
